@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"os/signal"
 	"strings"
 	"sync"
 	"syscall"
@@ -234,22 +233,10 @@ func (c *Context) Run(command string, args []string) (int, error) {
 		argstring = argstring + " '" + arg + "'"
 	}
 
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals)
-
 	cmd := exec.Command(c.BashPath, "-c", command+argstring)
 	cmd.Env = []string{"BASH_ENV=" + envfile}
 	cmd.Stdin = c.Stdin
 	cmd.Stdout = c.Stdout
 	cmd.Stderr = c.Stderr
-	cmd.Start()
-	go func() {
-		for sig := range signals {
-			cmd.Process.Signal(sig)
-			if cmd.ProcessState != nil && !cmd.ProcessState.Exited() {
-				cmd.Process.Signal(sig)
-			}
-		}
-	}()
-	return exitStatus(cmd.Wait())
+	return exitStatus(cmd.Run())
 }
