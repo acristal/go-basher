@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/kardianos/osext"
 )
@@ -169,6 +170,13 @@ func (c *Context) buildEnvfile() (string, error) {
 // default is attached to the calling process I/O. You can change this by setting
 // the Stdout, Stderr, Stdin variables of the Context.
 func (c *Context) Run(command string, args []string) (int, error) {
+	return c.RunTimeout(command, args, 0)
+}
+
+// RunTimeout runs a command in Bash from this Context.
+// The command is killed if it takes more than the given timeout.
+// If the timeout is equal to zero, RunTimeout will no attemp to kill the command at any time/
+func (c *Context) RunTimeout(command string, args []string, timeout time.Duration) (int, error) {
 	c.Lock()
 	defer c.Unlock()
 	envfile, err := c.buildEnvfile()
@@ -188,5 +196,16 @@ func (c *Context) Run(command string, args []string) (int, error) {
 	cmd.Stdin = c.Stdin
 	cmd.Stdout = c.Stdout
 	cmd.Stderr = c.Stderr
+
+	if timeout != 0 {
+		// If the child process is executing a child process of its own, we cannot simply
+		// use Process.Kill() since it would only kill the child, ot the grandchild.
+		// By using the negative PID, we ask kill to send the signal to the entire process group.
+		// Child processes get the same PGID as ther parents by default, so in order to avoid suicide,
+		/// we also ask Go to create a new process group for the child with SysProcAttr.
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		timer := time.AfterFunc(timeout, func() { syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) })
+		defer timer.Stop()
+	}
 	return exitStatus(cmd.Run())
 }

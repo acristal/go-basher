@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 )
 
 var bashpath = "/bin/bash"
 
 var testScripts = map[string]string{
-	"hello.sh":  `main() { echo "hello"; }`,
-	"cat.sh":    `main() { cat; }`,
-	"foobar.sh": `main() { echo $FOOBAR; }`,
+	"hello.sh":   `main() { echo "hello"; }`,
+	"cat.sh":     `main() { cat; }`,
+	"foobar.sh":  `main() { echo $FOOBAR; }`,
+	"timeout.sh": `main() { sleep 1; echo "error"; }`,
 }
 
 func testLoader(name string) ([]byte, error) {
@@ -116,5 +118,23 @@ func TestFuncHandling(t *testing.T) {
 	status = <-exit
 	if status != 2 {
 		t.Fatal("unexpected exit status:", status)
+	}
+}
+
+func TestTimeout(t *testing.T) {
+	bash, _ := NewContext(bashpath, false)
+	bash.Source("timeout.sh", testLoader)
+
+	var stdout bytes.Buffer
+	bash.Stdout = &stdout
+	status, err := bash.RunTimeout("main", []string{}, 100*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status == 0 {
+		t.Fatal("zero exit")
+	}
+	if stdout.String() != "" {
+		t.Fatal("unexpected stdout:", stdout.String())
 	}
 }
